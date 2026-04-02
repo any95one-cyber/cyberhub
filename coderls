@@ -2,28 +2,40 @@
 let ST=true,tried=new Set();
 let availableSeats=[],seatIndex=0,seatClicks=0;
 let firstSeatSeenTime=null;
+let TARGET=0;
+
+// ================= START / STOP BUTTON =================
+const BTN=document.createElement("button");
+BTN.style.cssText="position:fixed;top:20px;left:20px;z-index:999999;padding:12px 20px;background:#e42f40;color:#fff;border:none;border-radius:6px;cursor:pointer;";
+document.body.appendChild(BTN);
+
+function updateBtn(){
+ BTN.textContent=ST?"Pause":"Start";
+ BTN.style.background=ST?"#e42f40":"#1bd158";
+}
+updateBtn();
+
+BTN.onclick=()=>{
+ ST=!ST;
+ updateBtn();
+ if(ST){
+  startFlow();
+ }
+};
 
 // ================= DASHBOARD =================
-const btn=document.createElement("button");
-btn.style.cssText="position:fixed;top:20px;left:20px;z-index:9999;padding:10px 15px;background:#e42f40;color:#fff;border:none;border-radius:6px;";
-document.body.appendChild(btn);
+const PANEL=document.createElement("div");
+PANEL.style.cssText="position:fixed;top:70px;left:20px;z-index:999999;background:#111;color:#0f0;padding:12px;border-radius:8px;font-family:monospace;";
+PANEL.innerHTML=`
+Seats: <span id="d-seats">0</span><br>
+Assigned: <span id="d-clicks">0</span><br>
+Status: <span id="d-status">Idle</span>
+`;
+document.body.appendChild(PANEL);
 
-const panel=document.createElement("div");
-panel.style.cssText="position:fixed;top:60px;left:20px;z-index:9999;background:#111;color:#0f0;padding:10px;border-radius:6px;font-family:monospace;";
-panel.innerHTML=`Seats:<span id=s>0</span><br>Done:<span id=c>0</span><br>Status:<span id=st>Idle</span>`;
-document.body.appendChild(panel);
-
-const S=()=>document.getElementById("s");
-const C=()=>document.getElementById("c");
-const STS=()=>document.getElementById("st");
-
-function toggle(){
- ST=!ST;
- btn.textContent=ST?"Pause":"Start";
- btn.style.background=ST?"#e42f40":"#1bd158";
-}
-btn.onclick=()=>{toggle(); if(ST){start();}};
-toggle();
+const dSeats=()=>document.getElementById("d-seats");
+const dClicks=()=>document.getElementById("d-clicks");
+const dStatus=()=>document.getElementById("d-status");
 
 // ================= HELPERS =================
 const NL=t=>t.replace(/\s+/g," ").trim();
@@ -33,22 +45,31 @@ function getPassengers(){
   .filter(x=>x.offsetParent!==null);
 }
 
-// ================= PASSENGERS =================
+// ================= PASSENGER SELECTION =================
 function selectPassengers(){
  const p=getPassengers();
  if(!p.length) return setTimeout(selectPassengers,100);
 
  let list=[];
+
  if(SEAT_COUNT==='All'){
-  const n=Math.min(p.length,5);
-  list=PASSENGER_SELECTION_MODE==="BOTTOM"?p.slice(-n):p.slice(0,n);
- }else{
-  list=PASSENGER_REQ.map(i=>p[i-1]).filter(Boolean).slice(0,SEAT_COUNT);
+  const limit=Math.min(p.length,5);
+  list = PASSENGER_SELECTION_MODE==="BOTTOM"
+    ? p.slice(-limit)
+    : p.slice(0,limit);
+ } else {
+  list = PASSENGER_REQ.map(i=>p[i-1]).filter(Boolean).slice(0,SEAT_COUNT);
  }
 
- list.forEach(b=>b.click());
+ list.forEach(btn=>{
+  if(btn.getAttribute("aria-checked")!=="true"){
+   btn.click();
+  }
+ });
 
- STS().textContent="Passengers selected";
+ TARGET=list.length;
+
+ dStatus().textContent="Passengers Selected";
 
  setTimeout(clickProceed,200);
 }
@@ -56,85 +77,96 @@ function selectPassengers(){
 // ================= PROCEED =================
 function clickProceed(){
  let tries=0;
- const run=()=>{
-  let b=document.querySelector("div > form > div.flex.w-full > div > button")
-   || [...document.querySelectorAll("button")].find(x=>x.textContent.includes("PROCEED"));
 
-  if(b && !b.disabled){
-   b.click();
-   STS().textContent="Proceed clicked";
+ const run=()=>{
+  let btn=document.querySelector("div > form > div.flex.w-full > div > button")
+   || [...document.querySelectorAll("button")].find(b=>b.textContent?.trim().toUpperCase()==="PROCEED");
+
+  if(btn && !btn.disabled){
+   btn.click();
+   dStatus().textContent="Proceed Clicked";
    return;
   }
-  if(tries++<20) setTimeout(run,80);
+
+  if(tries++<25) setTimeout(run,80);
  };
+
  run();
 }
 
-// ================= SEATS =================
+// ================= SEAT MAP =================
 function seatElements(){
  return [...document.querySelectorAll("svg g")].map(g=>{
-  const r=g.querySelector("rect"); if(!r)return null;
-  return {g,id:r.x.baseVal.value+"-"+r.y.baseVal.value,
+  const r=g.querySelector("rect");
+  if(!r)return null;
+
+  return {
+   g,
+   id:`${r.x.baseVal.value}-${r.y.baseVal.value}`,
    fill:(r.getAttribute("fill")||"").toLowerCase(),
-   label:NL(g.textContent||"")};
+   label:NL(g.textContent||"")
+  };
  }).filter(Boolean);
 }
 
 // ================= WAIT =================
 function waitSeats(){
  if(!ST)return;
- if(document.querySelector("svg g rect")) scan();
- else setTimeout(waitSeats,100);
+
+ if(document.querySelector("svg g rect")){
+  scanSeats();
+ } else {
+  setTimeout(waitSeats,120);
+ }
 }
 
 // ================= SCAN =================
-function scan(){
+function scanSeats(){
  if(!ST)return;
 
- const all=seatElements();
+ const allSeats=seatElements();
 
- if(all.length<10){
-  STS().textContent="Waiting map";
-  return setTimeout(scan,200);
+ // wait for full render
+ if(allSeats.length<10){
+  dStatus().textContent="Waiting Seat Map";
+  return setTimeout(scanSeats,200);
  }
 
- let seats=all.filter(s=>s.fill==="#fff" && !tried.has(s.id));
+ let seats=allSeats.filter(s=>s.fill==="#fff" && !tried.has(s.id));
 
  if(!seats.length){
   if(!firstSeatSeenTime){
    firstSeatSeenTime=Date.now();
-   return setTimeout(scan,300);
+   return setTimeout(scanSeats,300);
   }
+
   if(Date.now()-firstSeatSeenTime<2500){
-   return setTimeout(scan,300);
+   return setTimeout(scanSeats,300);
   }
-  STS().textContent="Reload";
+
+  dStatus().textContent="Reloading";
   location.reload();
   return;
  }
 
  firstSeatSeenTime=null;
 
- const maxPassengers=document.querySelectorAll('button[aria-checked="true"]').length;
- const target=SEAT_COUNT==='All'?Math.min(maxPassengers,5):Math.min(SEAT_COUNT,maxPassengers);
-
  availableSeats=seats;
- window.__TARGET__=target;
-
- S().textContent=seats.length;
-
  seatIndex=0;
  seatClicks=0;
 
- assignNext();
+ dSeats().textContent=seats.length;
+ dStatus().textContent="Seats Found";
+
+ assignNextSeat();
 }
 
-// ================= FLOW =================
-function assignNext(){
+// ================= SEQUENTIAL FLOW =================
+function assignNextSeat(){
  if(!ST)return;
 
- if(seatClicks>=window.__TARGET__){
-  STS().textContent="Done";
+ if(seatClicks>=TARGET){
+  dStatus().textContent="Completed";
   return setTimeout(clickProceed,200);
  }
 
@@ -147,10 +179,12 @@ function assignNext(){
 function clickSeat(seat){
  tried.add(seat.id);
 
- const r=seat.g.querySelector("rect");
- ["mousedown","mouseup","click"].forEach(e=>r.dispatchEvent(new MouseEvent(e,{bubbles:true})));
+ const rect=seat.g.querySelector("rect");
+ ["mousedown","mouseup","click"].forEach(e=>{
+  rect.dispatchEvent(new MouseEvent(e,{bubbles:true}));
+ });
 
- setTimeout(assignSeat,80);
+ setTimeout(assignSeat,100);
 }
 
 // ================= POPUP =================
@@ -163,36 +197,37 @@ function getPopup(){
 function assignSeat(){
  if(!ST)return;
 
- const pop=getPopup();
+ const popup=getPopup();
 
- if(!pop){
-  return setTimeout(assignSeat,80);
+ if(!popup){
+  return setTimeout(assignSeat,100);
  }
 
- const next=pop.querySelector('input[type="checkbox"]:not(:disabled):not(:checked)');
+ const next=popup.querySelector('input[type="checkbox"]:not(:disabled):not(:checked)');
 
  if(!next){
-  STS().textContent="All assigned";
+  dStatus().textContent="All Assigned";
   return setTimeout(clickProceed,200);
  }
 
  next.click();
 
  seatClicks++;
- C().textContent=seatClicks;
- STS().textContent="Assigning";
+ dClicks().textContent=seatClicks;
+ dStatus().textContent="Assigning";
 
- if(seatClicks>=window.__TARGET__){
+ if(seatClicks>=TARGET){
   setTimeout(clickProceed,200);
  }else{
-  setTimeout(assignNext,80);
+  setTimeout(assignNextSeat,80);
  }
 }
 
-// ================= START =================
-function start(){
+// ================= START FLOW =================
+function startFlow(){
  selectPassengers();
  waitSeats();
 }
 
-start();
+// ================= INIT =================
+startFlow();
