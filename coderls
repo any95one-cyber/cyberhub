@@ -1,0 +1,230 @@
+// ================= STATE =================
+let ST=true,tried=new Set(),reloadT=null,lastActivity=Date.now();
+let seatClicks=0,availableSeats=[],seatIndex=0;
+
+const TOAST_TEXT="unavailable";
+let handlingError=false;
+
+// ================= HELPERS =================
+const RD=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
+const NL=t=>t.replace(/\s+/g," ").trim();
+const kick=()=>lastActivity=Date.now();
+const SN=s=>Number(s.label.match(/\d+/)?.[0]||0);
+
+function isLowerSeat(label){
+ return /\b(LL|RL|LOWER)\b/.test(NL(label).toUpperCase());
+}
+
+function getSeatTargetCount(total){
+ if(SEAT_COUNT==='All') return Math.min(total,5);
+ return SEAT_COUNT;
+}
+
+function RD_FAST(minF,maxF,minN,maxN){
+ const t=(SEAT_COUNT==='All')?5:SEAT_COUNT;
+ return t>=3
+  ? Math.floor(Math.random()*(maxF-minF+1))+minF
+  : Math.floor(Math.random()*(maxN-minN+1))+minN;
+}
+
+// ================= ERROR OBSERVER =================
+function onSeatUnavailable(){
+ if(handlingError)return;
+ handlingError=true;
+ seatClicks=0;seatIndex=0;availableSeats=[];
+ setTimeout(()=>{handlingError=false;scanSeats();},200);
+}
+
+new MutationObserver(m=>{
+ for(const x of m)
+  for(const n of x.addedNodes)
+   if(n.nodeType===1 && n.innerText?.toLowerCase().includes(TOAST_TEXT)){
+    onSeatUnavailable();return;
+   }
+}).observe(document.body,{childList:true,subtree:true});
+
+// ================= PASSENGER =================
+function getVisiblePassengers(){
+ return [...document.querySelectorAll('button[role="checkbox"]')]
+  .filter(x=>x.offsetParent!==null);
+}
+
+function selectPassengers(){
+ const passengers=getVisiblePassengers();
+ if(!passengers.length) return setTimeout(selectPassengers,50);
+
+ // ===== ALL MODE =====
+ if(SEAT_COUNT==='All'){
+  const total=passengers.length;
+  const limit=Math.min(total,5);
+
+  let selected=[];
+  if(PASSENGER_SELECTION_MODE==="BOTTOM"){
+    selected=passengers.slice(total-limit);
+  }else{
+    selected=passengers.slice(0,limit);
+  }
+
+  selected.forEach(b=>b.getAttribute("aria-checked")!=="true" && b.click());
+
+  document.querySelector('button[type="submit"]:not([disabled])')?.click();
+
+  if(ULTRA_RACE_MODE) setTimeout(waitForSeats,30);
+  return;
+ }
+
+ // ===== NORMAL MODE (FAST MULTI CLICK) =====
+ const valid=PASSENGER_REQ.map(i=>passengers[i-1]).filter(Boolean);
+ const target=Math.min(valid.length,SEAT_COUNT);
+
+ const selected=valid.slice(0,target);
+ selected.forEach(b=>b.getAttribute("aria-checked")!=="true" && b.click());
+
+ document.querySelector('button[type="submit"]:not([disabled])')?.click();
+ if(ULTRA_RACE_MODE) setTimeout(waitForSeats,30);
+}
+
+// ================= SEATS =================
+function seatElements(){
+ return [...document.querySelectorAll("svg g")].map(g=>{
+  const r=g.querySelector("rect");if(!r)return null;
+  return {
+   g,
+   id:`${r.x.baseVal.value}-${r.y.baseVal.value}`,
+   label:NL(g.querySelector("text")?.textContent||""),
+   fill:(r.getAttribute("fill")||"").toLowerCase(),
+   pwd:!!g.querySelector('image[href*="disability"]')
+  };
+ }).filter(Boolean);
+}
+
+function waitForSeats(){
+ if(!ST)return;
+ if(document.querySelector("svg g rect")) scanSeats();
+ else setTimeout(waitForSeats,ULTRA_RACE_MODE?40:120);
+}
+
+function scanSeats(){
+ if(!ST)return;kick();
+
+ let seats=seatElements().filter(s=>{
+  if(!["#fff","#ffffff","rgb(255,255,255)"].includes(s.fill))return false;
+  if(IS_DISABILITY_SEAT&&!s.pwd)return false;
+  if(!IS_DISABILITY_SEAT&&s.pwd)return false;
+  if(seatskip.includes(SN(s).toString()))return false;
+  return true;
+ });
+
+ seats=seats.filter(s=>!tried.has(s.id));
+ if(!seats.length)return smartReload();
+
+ const target=getSeatTargetCount(seats.length);
+ if(target<=0)return smartReload();
+
+ let lower=seats.filter(s=>isLowerSeat(s.label));
+ let pool=(PREFER_LOWER_SEATS && lower.length>=target)?lower:seats;
+
+ const A=[],B=[];
+ for(const s of pool){
+  const n=SN(s);
+  (START_SEAT==null||n>=START_SEAT)?A.push(s):B.push(s);
+ }
+
+ A.sort((a,b)=>SN(a)-SN(b));
+ B.sort((a,b)=>SN(b)-SN(a));
+
+ availableSeats=[...A,...B];
+ window.__TARGET_SEATS__=target;
+
+ seatIndex=0;
+ seatClicks=0;
+
+ assignNextSeat();
+}
+
+// ================= ASSIGN =================
+function assignNextSeat(){
+ if(!ST)return;
+
+ if(seatClicks>=window.__TARGET_SEATS__){
+  document.querySelector("div.flex-col button:not([disabled])")?.click();
+  return;
+ }
+
+ const seat=availableSeats[seatIndex++];
+ if(!seat)return;
+
+ setTimeout(()=>clickSeat(seat),
+  ULTRA_RACE_MODE?RD(5,15):RD_FAST(25,60,80,140));
+}
+
+function clickSeat(seat){
+ if(!ST)return;kick();
+
+ tried.add(seat.id);
+ seatClicks++;
+
+ const rect=seat.g.querySelector("rect");
+ ["mousedown","mouseup","click"].forEach(e=>
+  rect.dispatchEvent(new MouseEvent(e,{bubbles:true}))
+ );
+
+ setTimeout(assignSeat,
+  ULTRA_RACE_MODE?RD(5,20):RD_FAST(30,70,90,160));
+}
+
+function getSeatPopup(){
+ return window.innerWidth<768
+  ? document.querySelector('div[role="dialog"]')
+  : document.querySelector('div.hidden.md\\:block');
+}
+
+let retry=0;
+
+function assignSeat(){
+ const popup=getSeatPopup();
+
+ if(!popup){
+  if(retry++<15){
+    return setTimeout(assignSeat,ULTRA_RACE_MODE?10:80);
+  }
+  retry=0;
+  return assignNextSeat();
+ }
+
+ retry=0;
+
+ const p=popup.querySelector('input[type="checkbox"]:not(:disabled):not(:checked)');
+ if(!p)return setTimeout(assignNextSeat,50);
+
+ p.click();
+
+ if(seatClicks>=window.__TARGET_SEATS__){
+  setTimeout(()=>{
+    document.querySelector("div.flex-col button:not([disabled])")?.click();
+  },ULTRA_RACE_MODE?50:300);
+ }else{
+  setTimeout(assignNextSeat,
+    ULTRA_RACE_MODE?RD(5,20):RD_FAST(40,90,120,200));
+ }
+}
+
+// ================= RELOAD =================
+function smartReload(){
+ if(!ST||reloadT)return;
+ reloadT=setTimeout(()=>{
+  tried.clear();
+  reloadT=null;
+  location.reload();
+ },RD(4000,7000));
+}
+
+// ================= WATCHDOG =================
+setInterval(()=>{
+ if(!ST)return;
+ if(Date.now()-lastActivity>45000) location.reload();
+},4000);
+
+// ================= START =================
+selectPassengers();
+waitForSeats();
