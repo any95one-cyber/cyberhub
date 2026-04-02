@@ -17,6 +17,12 @@ function updateButton(){
 }
 updateButton();
 
+function getSeatPopup(){
+ return window.innerWidth < 768
+  ? document.querySelector('div[role="dialog"]')
+  : document.querySelector('div.hidden.md\\:block');
+}
+
 // ================= STATUS PANEL =================
 const SP=document.createElement("div");
 SP.style.cssText=`position:fixed;top:80px;left:20px;z-index:999999;background:#111;color:#0f0;padding:12px;border-radius:8px;font-family:monospace;min-width:180px;`;
@@ -187,35 +193,91 @@ function scanSeats(){
  assignNextSeat();
 }
 
-// ================= ASSIGN =================
-function assignNextSeat(){
- if(!ST)return;
+// ================= ASSIGN SEQUENTIAL SEAT FLOW =================
 
- if(seatClicks>=window.__TARGET_SEATS__){
+function assignNextSeat(){
+ if(!ST) return;
+
+ // ✅ stop when done
+ if(seatClicks >= window.__TARGET_SEATS__){
    clickProceed();
    return;
  }
 
- const seat=availableSeats[seatIndex++];
- if(!seat)return;
+ const seat = availableSeats[seatIndex];
+ if(!seat) return;
 
- setTimeout(()=>clickSeat(seat), ULTRA_RACE_MODE?10:60);
+ clickSeat(seat);
 }
 
+// STEP 1: CLICK SEAT
 function clickSeat(seat){
+ if(!ST) return;
+
  tried.add(seat.id);
- seatClicks++;
+ lastActivity = Date.now();
 
- if(spClicks()) spClicks().textContent=seatClicks;
- trackClick();
- if(spStatus()) spStatus().textContent="Clicking";
+ const rect = seat.g.querySelector("rect");
 
- const rect=seat.g.querySelector("rect");
- ["mousedown","mouseup","click"].forEach(e=>
-  rect.dispatchEvent(new MouseEvent(e,{bubbles:true}))
+ ["mousedown","mouseup","click"].forEach(e =>
+   rect.dispatchEvent(new MouseEvent(e,{bubbles:true}))
  );
 
- setTimeout(assignNextSeat, ULTRA_RACE_MODE?10:60);
+ if(spStatus()) spStatus().textContent = "Seat Clicked";
+
+ // ✅ wait for popup before continuing
+ waitForPopupAndAssign();
+}
+
+// STEP 2: WAIT FOR POPUP
+function waitForPopupAndAssign(){
+ let tries = 0;
+
+ const check = () => {
+   const popup = getSeatPopup();
+
+   if(popup){
+     assignPassengerFromPopup(popup);
+     return;
+   }
+
+   if(tries++ < 25){
+     setTimeout(check, ULTRA_RACE_MODE ? 15 : 60);
+   } else {
+     // fallback → skip seat
+     seatIndex++;
+     assignNextSeat();
+   }
+ };
+
+ check();
+}
+
+// STEP 3: ASSIGN PASSENGER
+function assignPassengerFromPopup(popup){
+ const checkbox = popup.querySelector(
+   'input[type="checkbox"]:not(:disabled):not(:checked)'
+ );
+
+ if(!checkbox){
+   // no passenger → skip
+   seatIndex++;
+   assignNextSeat();
+   return;
+ }
+
+ checkbox.click();
+
+ // ✅ only increment AFTER assignment
+ seatClicks++;
+ seatIndex++;
+
+ if(spClicks()) spClicks().textContent = seatClicks;
+ trackClick();
+ if(spStatus()) spStatus().textContent = "Assigning";
+
+ // small delay → UI stability
+ setTimeout(assignNextSeat, ULTRA_RACE_MODE ? 15 : 80);
 }
 
 // ================= RELOAD =================
