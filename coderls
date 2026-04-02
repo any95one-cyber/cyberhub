@@ -5,6 +5,46 @@ let seatClicks=0,availableSeats=[],seatIndex=0;
 const TOAST_TEXT="unavailable";
 let handlingError=false;
 
+// ================= FLOAT BUTTON =================
+const FB=document.createElement("button");
+FB.textContent="Pause";
+FB.style.cssText=`position:fixed;top:20px;left:20px;z-index:9999;padding:14px 22px;background:#e42f40;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:16px;box-shadow:0 2px 6px rgba(0,0,0,.3)`;
+document.body.appendChild(FB);
+
+function updateButton(){
+ FB.textContent=ST?"Pause":"Start";
+ FB.style.background=ST?"#e42f40":"#1bd158";
+}
+updateButton();
+
+// ================= STATUS PANEL =================
+const SP=document.createElement("div");
+SP.style.cssText=`position:fixed;top:80px;left:20px;z-index:9999;background:#111;color:#0f0;padding:12px 16px;border-radius:8px;font-size:13px;font-family:monospace;box-shadow:0 2px 8px rgba(0,0,0,.4);min-width:180px;line-height:1.5;`;
+
+SP.innerHTML=`
+<b>⚡ Seat Bot</b><br>
+Seats Found: <span id="sp-seats">0</span><br>
+Clicks: <span id="sp-clicks">0</span><br>
+Speed: <span id="sp-speed">0</span>/s<br>
+Status: <span id="sp-status">Idle</span>
+`;
+
+document.body.appendChild(SP);
+
+const spSeats=SP.querySelector("#sp-seats");
+const spClicks=SP.querySelector("#sp-clicks");
+const spSpeed=SP.querySelector("#sp-speed");
+const spStatus=SP.querySelector("#sp-status");
+
+// ================= SPEED TRACKER =================
+let clickHistory=[];
+function trackClick(){
+ const now=Date.now();
+ clickHistory.push(now);
+ clickHistory = clickHistory.filter(t=>now - t < 1000);
+ spSpeed.textContent = clickHistory.length;
+}
+
 // ================= HELPERS =================
 const RD=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
 const NL=t=>t.replace(/\s+/g," ").trim();
@@ -26,6 +66,21 @@ function RD_FAST(minF,maxF,minN,maxN){
   ? Math.floor(Math.random()*(maxF-minF+1))+minF
   : Math.floor(Math.random()*(maxN-minN+1))+minN;
 }
+
+// ================= BUTTON ACTION =================
+FB.onclick=()=>{
+ ST=!ST;
+ updateButton();
+ spStatus.textContent = ST ? "Running" : "Paused";
+
+ if(ST){
+   if(document.querySelector("svg g rect")){
+     waitForSeats();
+   }else{
+     selectPassengers();
+   }
+ }
+};
 
 // ================= ERROR OBSERVER =================
 function onSeatUnavailable(){
@@ -53,34 +108,33 @@ function selectPassengers(){
  const passengers=getVisiblePassengers();
  if(!passengers.length) return setTimeout(selectPassengers,50);
 
- // ===== ALL MODE =====
+ // ALL MODE
  if(SEAT_COUNT==='All'){
   const total=passengers.length;
   const limit=Math.min(total,5);
 
-  let selected=[];
-  if(PASSENGER_SELECTION_MODE==="BOTTOM"){
-    selected=passengers.slice(total-limit);
-  }else{
-    selected=passengers.slice(0,limit);
-  }
+  let selected = PASSENGER_SELECTION_MODE==="BOTTOM"
+    ? passengers.slice(total-limit)
+    : passengers.slice(0,limit);
 
   selected.forEach(b=>b.getAttribute("aria-checked")!=="true" && b.click());
 
   document.querySelector('button[type="submit"]:not([disabled])')?.click();
+  spStatus.textContent="Passengers Selected";
 
   if(ULTRA_RACE_MODE) setTimeout(waitForSeats,30);
   return;
  }
 
- // ===== NORMAL MODE (FAST MULTI CLICK) =====
+ // NORMAL MODE
  const valid=PASSENGER_REQ.map(i=>passengers[i-1]).filter(Boolean);
  const target=Math.min(valid.length,SEAT_COUNT);
 
- const selected=valid.slice(0,target);
- selected.forEach(b=>b.getAttribute("aria-checked")!=="true" && b.click());
+ valid.slice(0,target).forEach(b=>b.getAttribute("aria-checked")!=="true" && b.click());
 
  document.querySelector('button[type="submit"]:not([disabled])')?.click();
+ spStatus.textContent="Passengers Selected";
+
  if(ULTRA_RACE_MODE) setTimeout(waitForSeats,30);
 }
 
@@ -106,6 +160,7 @@ function waitForSeats(){
 
 function scanSeats(){
  if(!ST)return;kick();
+ spStatus.textContent="Scanning";
 
  let seats=seatElements().filter(s=>{
   if(!["#fff","#ffffff","rgb(255,255,255)"].includes(s.fill))return false;
@@ -136,6 +191,8 @@ function scanSeats(){
  availableSeats=[...A,...B];
  window.__TARGET_SEATS__=target;
 
+ spSeats.textContent=availableSeats.length;
+
  seatIndex=0;
  seatClicks=0;
 
@@ -163,6 +220,9 @@ function clickSeat(seat){
 
  tried.add(seat.id);
  seatClicks++;
+ spClicks.textContent=seatClicks;
+ trackClick();
+ spStatus.textContent="Clicking";
 
  const rect=seat.g.querySelector("rect");
  ["mousedown","mouseup","click"].forEach(e=>
@@ -185,14 +245,13 @@ function assignSeat(){
  const popup=getSeatPopup();
 
  if(!popup){
-  if(retry++<15){
-    return setTimeout(assignSeat,ULTRA_RACE_MODE?10:80);
-  }
+  if(retry++<15) return setTimeout(assignSeat,ULTRA_RACE_MODE?10:80);
   retry=0;
   return assignNextSeat();
  }
 
  retry=0;
+ spStatus.textContent="Assigning";
 
  const p=popup.querySelector('input[type="checkbox"]:not(:disabled):not(:checked)');
  if(!p)return setTimeout(assignNextSeat,50);
@@ -212,6 +271,7 @@ function assignSeat(){
 // ================= RELOAD =================
 function smartReload(){
  if(!ST||reloadT)return;
+ spStatus.textContent="Reloading";
  reloadT=setTimeout(()=>{
   tried.clear();
   reloadT=null;
@@ -226,5 +286,6 @@ setInterval(()=>{
 },4000);
 
 // ================= START =================
+spStatus.textContent="Running";
 selectPassengers();
 waitForSeats();
