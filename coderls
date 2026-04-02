@@ -122,7 +122,30 @@ function scanSeats(){
  if(!ST)return; kick();
 
  let seats=seatElements().filter(s=>s.fill==="#fff" && !tried.has(s.id));
- if(!seats.length) return location.reload();
+ if(!seats.length){
+
+  const now = Date.now();
+
+  if(!firstSeatSeenTime){
+    firstSeatSeenTime = now;
+    lastSeatCount = 0;
+    return setTimeout(scanSeats, 200);
+  }
+
+  // if DOM still changing → wait
+  if(seats.length !== lastSeatCount){
+    lastSeatCount = seats.length;
+    firstSeatSeenTime = now;
+    return setTimeout(scanSeats, 200);
+  }
+
+  if(now - firstSeatSeenTime < 2500){
+    return setTimeout(scanSeats, 200);
+  }
+
+  location.reload();
+  return;
+}
 
  const target=getSeatTargetCount(seats.length);
  if(target<=0) return location.reload();
