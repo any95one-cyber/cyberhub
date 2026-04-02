@@ -1,244 +1,198 @@
+// ================= STATE =================
+let ST=true,tried=new Set();
+let availableSeats=[],seatIndex=0,seatClicks=0;
+let firstSeatSeenTime=null;
+
 // ================= DASHBOARD =================
-const FB=document.createElement("button");
-FB.style.cssText="position:fixed;top:20px;left:20px;z-index:999999;padding:12px 20px;background:#e42f40;color:#fff;border:none;border-radius:6px;";
-document.body.appendChild(FB);
+const btn=document.createElement("button");
+btn.style.cssText="position:fixed;top:20px;left:20px;z-index:9999;padding:10px 15px;background:#e42f40;color:#fff;border:none;border-radius:6px;";
+document.body.appendChild(btn);
 
-const PANEL=document.createElement("div");
-PANEL.style.cssText="position:fixed;top:70px;left:20px;z-index:999999;background:#111;color:#0f0;padding:12px;border-radius:8px;font-family:monospace;";
-PANEL.innerHTML=`
-Seats: <span id="d-seats">0</span><br>
-Clicks: <span id="d-clicks">0</span><br>
-Speed: <span id="d-speed">0</span>/s<br>
-Status: <span id="d-status">Idle</span>
-`;
-document.body.appendChild(PANEL);
+const panel=document.createElement("div");
+panel.style.cssText="position:fixed;top:60px;left:20px;z-index:9999;background:#111;color:#0f0;padding:10px;border-radius:6px;font-family:monospace;";
+panel.innerHTML=`Seats:<span id=s>0</span><br>Done:<span id=c>0</span><br>Status:<span id=st>Idle</span>`;
+document.body.appendChild(panel);
 
-const dSeats=()=>document.getElementById("d-seats");
-const dClicks=()=>document.getElementById("d-clicks");
-const dSpeed=()=>document.getElementById("d-speed");
-const dStatus=()=>document.getElementById("d-status");
+const S=()=>document.getElementById("s");
+const C=()=>document.getElementById("c");
+const STS=()=>document.getElementById("st");
 
-function updateBtn(){
- FB.textContent=ST?"Pause":"Start";
- FB.style.background=ST?"#e42f40":"#1bd158";
-}
-updateBtn();
-
-FB.onclick=()=>{
+function toggle(){
  ST=!ST;
- updateBtn();
- dStatus().textContent=ST?"Running":"Paused";
- if(ST){
-  selectPassengers();
-  waitForSeats();
- }
-};
-
-// ================= SPEED =================
-let history=[];
-function track(){
- const now=Date.now();
- history.push(now);
- history=history.filter(t=>now-t<1000);
- dSpeed().textContent=history.length;
+ btn.textContent=ST?"Pause":"Start";
+ btn.style.background=ST?"#e42f40":"#1bd158";
 }
+btn.onclick=()=>{toggle(); if(ST){start();}};
+toggle();
 
 // ================= HELPERS =================
 const NL=t=>t.replace(/\s+/g," ").trim();
-const kick=()=>lastActivity=Date.now();
 
-// ================= TARGET =================
-function getMaxSelectablePassengers(){
- return document.querySelectorAll('button[role="checkbox"][aria-checked="true"]').length;
+function getPassengers(){
+ return [...document.querySelectorAll('button[role="checkbox"]')]
+  .filter(x=>x.offsetParent!==null);
 }
 
-function getSeatTargetCount(totalSeats){
- const p=getMaxSelectablePassengers();
- if(SEAT_COUNT==='All') return Math.min(totalSeats,p,5);
- return Math.min(SEAT_COUNT,p);
+// ================= PASSENGERS =================
+function selectPassengers(){
+ const p=getPassengers();
+ if(!p.length) return setTimeout(selectPassengers,100);
+
+ let list=[];
+ if(SEAT_COUNT==='All'){
+  const n=Math.min(p.length,5);
+  list=PASSENGER_SELECTION_MODE==="BOTTOM"?p.slice(-n):p.slice(0,n);
+ }else{
+  list=PASSENGER_REQ.map(i=>p[i-1]).filter(Boolean).slice(0,SEAT_COUNT);
+ }
+
+ list.forEach(b=>b.click());
+
+ STS().textContent="Passengers selected";
+
+ setTimeout(clickProceed,200);
 }
 
 // ================= PROCEED =================
 function clickProceed(){
  let tries=0;
- const go=()=>{
-  let btn=document.querySelector("div > form > div.flex.w-full > div > button")
-   || [...document.querySelectorAll("button")].find(b=>b.textContent?.includes("PROCEED"));
+ const run=()=>{
+  let b=document.querySelector("div > form > div.flex.w-full > div > button")
+   || [...document.querySelectorAll("button")].find(x=>x.textContent.includes("PROCEED"));
 
-  if(btn && !btn.disabled){
-   ["mousedown","mouseup","click"].forEach(e=>btn.dispatchEvent(new MouseEvent(e,{bubbles:true})));
-   dStatus().textContent="Proceed Clicked";
+  if(b && !b.disabled){
+   b.click();
+   STS().textContent="Proceed clicked";
    return;
   }
-
-  if(tries++<20) setTimeout(go,40);
+  if(tries++<20) setTimeout(run,80);
  };
- setTimeout(go,100);
-}
-
-// ================= PASSENGERS =================
-function getVisiblePassengers(){
- return [...document.querySelectorAll('button[role="checkbox"]')]
-  .filter(x=>x.offsetParent!==null);
-}
-
-function selectPassengers(){
- const p=getVisiblePassengers();
- if(!p.length) return setTimeout(selectPassengers,50);
-
- let list=[];
- if(SEAT_COUNT==='All'){
-  const lim=Math.min(p.length,5);
-  list=PASSENGER_SELECTION_MODE==="BOTTOM"?p.slice(-lim):p.slice(0,lim);
- }else{
-  list=PASSENGER_REQ.map(i=>p[i-1]).filter(Boolean).slice(0,SEAT_COUNT);
- }
-
- list.forEach(b=>b.getAttribute("aria-checked")!=="true" && b.click());
-
- dStatus().textContent="Passengers Selected";
- setTimeout(clickProceed,120);
+ run();
 }
 
 // ================= SEATS =================
 function seatElements(){
  return [...document.querySelectorAll("svg g")].map(g=>{
   const r=g.querySelector("rect"); if(!r)return null;
-  return {
-   g,
-   id:`${r.x.baseVal.value}-${r.y.baseVal.value}`,
-   label:NL(g.textContent||""),
-   fill:(r.getAttribute("fill")||"").toLowerCase()
-  };
+  return {g,id:r.x.baseVal.value+"-"+r.y.baseVal.value,
+   fill:(r.getAttribute("fill")||"").toLowerCase(),
+   label:NL(g.textContent||"")};
  }).filter(Boolean);
 }
 
-function waitForSeats(){
+// ================= WAIT =================
+function waitSeats(){
  if(!ST)return;
- if(document.querySelector("svg g rect")) scanSeats();
- else setTimeout(waitForSeats,80);
+ if(document.querySelector("svg g rect")) scan();
+ else setTimeout(waitSeats,100);
 }
 
-// ================= FIXED SCAN =================
-function scanSeats(){
- if(!ST)return; kick();
+// ================= SCAN =================
+function scan(){
+ if(!ST)return;
 
- const allSeats=seatElements();
- let seats=allSeats.filter(s=>s.fill==="#fff" && !tried.has(s.id));
+ const all=seatElements();
 
- // 🔥 WAIT until map is fully rendered
- if(allSeats.length < 10){
-  dStatus().textContent="Waiting Seat Map...";
-  return setTimeout(scanSeats,200);
+ if(all.length<10){
+  STS().textContent="Waiting map";
+  return setTimeout(scan,200);
  }
 
- // 🔥 NO FALSE RELOAD
+ let seats=all.filter(s=>s.fill==="#fff" && !tried.has(s.id));
+
  if(!seats.length){
-  const now=Date.now();
-
   if(!firstSeatSeenTime){
-    firstSeatSeenTime=now;
-    dStatus().textContent="No seats yet...";
-    return setTimeout(scanSeats,300);
+   firstSeatSeenTime=Date.now();
+   return setTimeout(scan,300);
   }
-
-  if(now-firstSeatSeenTime<2500){
-    return setTimeout(scanSeats,300);
+  if(Date.now()-firstSeatSeenTime<2500){
+   return setTimeout(scan,300);
   }
-
-  dStatus().textContent="Reloading...";
+  STS().textContent="Reload";
   location.reload();
   return;
  }
 
  firstSeatSeenTime=null;
 
- const target=getSeatTargetCount(seats.length);
- if(target<=0) return;
+ const maxPassengers=document.querySelectorAll('button[aria-checked="true"]').length;
+ const target=SEAT_COUNT==='All'?Math.min(maxPassengers,5):Math.min(SEAT_COUNT,maxPassengers);
 
  availableSeats=seats;
- window.__TARGET_SEATS__=target;
+ window.__TARGET__=target;
 
- dSeats().textContent=seats.length;
+ S().textContent=seats.length;
 
  seatIndex=0;
  seatClicks=0;
 
- dStatus().textContent="Seats Found";
-
- assignNextSeat();
+ assignNext();
 }
 
-// ================= ENGINE =================
-function assignNextSeat(){
+// ================= FLOW =================
+function assignNext(){
  if(!ST)return;
 
- if(seatClicks>=window.__TARGET_SEATS__){
-  setTimeout(clickProceed,120);
-  return;
+ if(seatClicks>=window.__TARGET__){
+  STS().textContent="Done";
+  return setTimeout(clickProceed,200);
  }
 
- const seat=availableSeats[seatIndex];
+ const seat=availableSeats[seatIndex++];
  if(!seat)return;
 
- seatIndex++;
- setTimeout(()=>clickSeat(seat),25);
+ clickSeat(seat);
 }
 
 function clickSeat(seat){
- if(!ST)return; kick();
-
  tried.add(seat.id);
- seatClicks++;
 
- dClicks().textContent=seatClicks;
- track();
- dStatus().textContent="Clicking Seat";
+ const r=seat.g.querySelector("rect");
+ ["mousedown","mouseup","click"].forEach(e=>r.dispatchEvent(new MouseEvent(e,{bubbles:true})));
 
- const rect=seat.g.querySelector("rect");
- ["mousedown","mouseup","click"].forEach(e=>rect.dispatchEvent(new MouseEvent(e,{bubbles:true})));
-
- setTimeout(assignSeat,30);
+ setTimeout(assignSeat,80);
 }
 
 // ================= POPUP =================
-function getSeatPopup(){
- return document.querySelector('div[role="dialog"]')
-     || document.querySelector('div.hidden.md\\:block')
-     || document.querySelector('input[type="checkbox"]')?.closest("div");
+function getPopup(){
+ return document.querySelector('[role="dialog"]')
+  || document.querySelector('div.hidden.md\\:block');
 }
 
 // ================= ASSIGN =================
 function assignSeat(){
  if(!ST)return;
 
- const popup=getSeatPopup();
+ const pop=getPopup();
 
- if(!popup){
-  setTimeout(assignSeat,20);
-  return;
+ if(!pop){
+  return setTimeout(assignSeat,80);
  }
 
- const next=popup.querySelector('input[type="checkbox"]:not(:disabled):not(:checked)');
+ const next=pop.querySelector('input[type="checkbox"]:not(:disabled):not(:checked)');
 
  if(!next){
-  dStatus().textContent="All Assigned";
-  seatClicks=window.__TARGET_SEATS__;
-  setTimeout(clickProceed,120);
-  return;
+  STS().textContent="All assigned";
+  return setTimeout(clickProceed,200);
  }
 
  next.click();
- dStatus().textContent="Assigning";
 
- if(seatClicks>=window.__TARGET_SEATS__){
-  setTimeout(clickProceed,120);
+ seatClicks++;
+ C().textContent=seatClicks;
+ STS().textContent="Assigning";
+
+ if(seatClicks>=window.__TARGET__){
+  setTimeout(clickProceed,200);
  }else{
-  setTimeout(assignNextSeat,20);
+  setTimeout(assignNext,80);
  }
 }
 
 // ================= START =================
-dStatus().textContent="Running";
-selectPassengers();
-waitForSeats();
+function start(){
+ selectPassengers();
+ waitSeats();
+}
+
+start();
