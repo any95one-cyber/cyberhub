@@ -1,10 +1,21 @@
+// ================= CONFIG =================
+const PASSENGER_REQ=[1,2,3,4];
+const SEAT_COUNT='All'; // number or 'All'
+const PASSENGER_SELECTION_MODE="TOP"; // TOP | BOTTOM | ALL
+
+const ULTRA_RACE_MODE=true;
+
 // ================= STATE =================
-let ST=true,tried=new Set(),reloadT=null,lastActivity=Date.now();
+let ST=true,tried=new Set(),lastActivity=Date.now();
 let seatClicks=0,availableSeats=[],seatIndex=0;
+
+// 🔥 reload stability
+let firstSeatSeenTime=null;
+let lastSeatCount=0;
 
 // ================= DASHBOARD =================
 const FB=document.createElement("button");
-FB.style.cssText="position:fixed;top:20px;left:20px;z-index:999999;padding:12px 20px;background:#e42f40;color:#fff;border:none;border-radius:6px;cursor:pointer;";
+FB.style.cssText="position:fixed;top:20px;left:20px;z-index:999999;padding:12px 20px;background:#e42f40;color:#fff;border:none;border-radius:6px;";
 document.body.appendChild(FB);
 
 const PANEL=document.createElement("div");
@@ -48,7 +59,6 @@ function track(){
 }
 
 // ================= HELPERS =================
-const SN=s=>Number(s.label.match(/\d+/)?.[0]||0);
 const NL=t=>t.replace(/\s+/g," ").trim();
 const kick=()=>lastActivity=Date.now();
 
@@ -68,14 +78,17 @@ function clickProceed(){
  let tries=0;
  const go=()=>{
   let btn=document.querySelector("div > form > div.flex.w-full > div > button")
-    || [...document.querySelectorAll("button")].find(b=>b.textContent?.includes("PROCEED"));
+   || [...document.querySelectorAll("button")].find(b=>b.textContent?.includes("PROCEED"));
+
   if(btn && !btn.disabled){
    ["mousedown","mouseup","click"].forEach(e=>btn.dispatchEvent(new MouseEvent(e,{bubbles:true})));
    dStatus().textContent="Proceed Clicked";
    return;
   }
+
   if(tries++<20) setTimeout(go,40);
  };
+
  setTimeout(go,100);
 }
 
@@ -107,8 +120,12 @@ function selectPassengers(){
 function seatElements(){
  return [...document.querySelectorAll("svg g")].map(g=>{
   const r=g.querySelector("rect"); if(!r)return null;
-  return {g,id:`${r.x.baseVal.value}-${r.y.baseVal.value}`,
-   label:NL(g.textContent||""),fill:(r.getAttribute("fill")||"").toLowerCase()};
+  return {
+   g,
+   id:`${r.x.baseVal.value}-${r.y.baseVal.value}`,
+   label:NL(g.textContent||""),
+   fill:(r.getAttribute("fill")||"").toLowerCase()
+  };
  }).filter(Boolean);
 }
 
@@ -118,34 +135,39 @@ function waitForSeats(){
  else setTimeout(waitForSeats,60);
 }
 
+// ================= SMART SCAN =================
 function scanSeats(){
  if(!ST)return; kick();
 
  let seats=seatElements().filter(s=>s.fill==="#fff" && !tried.has(s.id));
- if(!seats.length){
 
-  const now = Date.now();
+ // 🔥 SMART RELOAD FIX
+ if(!seats.length){
+  const now=Date.now();
 
   if(!firstSeatSeenTime){
-    firstSeatSeenTime = now;
-    lastSeatCount = 0;
-    return setTimeout(scanSeats, 200);
+    firstSeatSeenTime=now;
+    lastSeatCount=0;
+    return setTimeout(scanSeats,200);
   }
 
-  // if DOM still changing → wait
-  if(seats.length !== lastSeatCount){
-    lastSeatCount = seats.length;
-    firstSeatSeenTime = now;
-    return setTimeout(scanSeats, 200);
+  if(seats.length!==lastSeatCount){
+    lastSeatCount=seats.length;
+    firstSeatSeenTime=now;
+    return setTimeout(scanSeats,200);
   }
 
-  if(now - firstSeatSeenTime < 2500){
-    return setTimeout(scanSeats, 200);
+  if(now-firstSeatSeenTime<2500){
+    return setTimeout(scanSeats,200);
   }
 
+  dStatus().textContent="Reloading...";
   location.reload();
   return;
-}
+ }
+
+ // reset stability
+ firstSeatSeenTime=null;
 
  const target=getSeatTargetCount(seats.length);
  if(target<=0) return location.reload();
