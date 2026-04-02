@@ -2,43 +2,81 @@
 let ST=true,tried=new Set(),reloadT=null,lastActivity=Date.now();
 let seatClicks=0,availableSeats=[],seatIndex=0;
 
-const TOAST_TEXT="unavailable";
+// ================= DASHBOARD =================
+const FB=document.createElement("button");
+FB.style.cssText="position:fixed;top:20px;left:20px;z-index:999999;padding:12px 20px;background:#e42f40;color:#fff;border:none;border-radius:6px;cursor:pointer;";
+document.body.appendChild(FB);
 
-// ================= HELPERS =================
-const RD=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
-const SN=s=>Number(s.label.match(/\d+/)?.[0]||0);
-const NL=t=>t.replace(/\s+/g," ").trim();
+const PANEL=document.createElement("div");
+PANEL.style.cssText="position:fixed;top:70px;left:20px;z-index:999999;background:#111;color:#0f0;padding:12px;border-radius:8px;font-family:monospace;";
+PANEL.innerHTML=`
+Seats: <span id="d-seats">0</span><br>
+Clicks: <span id="d-clicks">0</span><br>
+Speed: <span id="d-speed">0</span>/s<br>
+Status: <span id="d-status">Idle</span>
+`;
+document.body.appendChild(PANEL);
 
-function kick(){ lastActivity=Date.now(); }
+const dSeats=()=>document.getElementById("d-seats");
+const dClicks=()=>document.getElementById("d-clicks");
+const dSpeed=()=>document.getElementById("d-speed");
+const dStatus=()=>document.getElementById("d-status");
 
-function getSeatTargetCount(total){
- if(SEAT_COUNT==='All') return Math.min(total,5);
- return SEAT_COUNT;
+function updateBtn(){
+ FB.textContent=ST?"Pause":"Start";
+ FB.style.background=ST?"#e42f40":"#1bd158";
+}
+updateBtn();
+
+FB.onclick=()=>{
+ ST=!ST;
+ updateBtn();
+ dStatus().textContent=ST?"Running":"Paused";
+ if(ST){
+  selectPassengers();
+  waitForSeats();
+ }
+};
+
+// ================= SPEED =================
+let history=[];
+function track(){
+ const now=Date.now();
+ history.push(now);
+ history=history.filter(t=>now-t<1000);
+ dSpeed().textContent=history.length;
 }
 
-// ================= PROCEED (FIXED) =================
+// ================= HELPERS =================
+const SN=s=>Number(s.label.match(/\d+/)?.[0]||0);
+const NL=t=>t.replace(/\s+/g," ").trim();
+const kick=()=>lastActivity=Date.now();
+
+// ================= TARGET FIX =================
+function getMaxSelectablePassengers(){
+ return document.querySelectorAll('button[role="checkbox"][aria-checked="true"]').length;
+}
+
+function getSeatTargetCount(totalSeats){
+ const p=getMaxSelectablePassengers();
+ if(SEAT_COUNT==='All') return Math.min(totalSeats,p,5);
+ return Math.min(SEAT_COUNT,p);
+}
+
+// ================= PROCEED =================
 function clickProceed(){
  let tries=0;
-
- const attempt=()=>{
-   let btn=document.querySelector("div > form > div.flex.w-full > div > button");
-
-   if(!btn){
-     btn=[...document.querySelectorAll("button")]
-      .find(b=>b.textContent?.trim().toUpperCase()==="PROCEED");
-   }
-
-   if(btn && !btn.disabled){
-     ["mousedown","mouseup","click"].forEach(e=>
-       btn.dispatchEvent(new MouseEvent(e,{bubbles:true}))
-     );
-     return;
-   }
-
-   if(tries++<20) setTimeout(attempt,40);
+ const go=()=>{
+  let btn=document.querySelector("div > form > div.flex.w-full > div > button")
+    || [...document.querySelectorAll("button")].find(b=>b.textContent?.includes("PROCEED"));
+  if(btn && !btn.disabled){
+   ["mousedown","mouseup","click"].forEach(e=>btn.dispatchEvent(new MouseEvent(e,{bubbles:true})));
+   dStatus().textContent="Proceed Clicked";
+   return;
+  }
+  if(tries++<20) setTimeout(go,40);
  };
-
- setTimeout(attempt, ULTRA_RACE_MODE?90:150);
+ setTimeout(go,100);
 }
 
 // ================= PASSENGERS =================
@@ -48,58 +86,42 @@ function getVisiblePassengers(){
 }
 
 function selectPassengers(){
- const passengers=getVisiblePassengers();
- if(!passengers.length) return setTimeout(selectPassengers,50);
+ const p=getVisiblePassengers();
+ if(!p.length) return setTimeout(selectPassengers,50);
 
+ let list=[];
  if(SEAT_COUNT==='All'){
-  const limit=Math.min(passengers.length,5);
-
-  const selected = PASSENGER_SELECTION_MODE==="BOTTOM"
-    ? passengers.slice(-limit)
-    : passengers.slice(0,limit);
-
-  selected.forEach(b=>{
-    if(b.getAttribute("aria-checked")!=="true") b.click();
-  });
-
-  clickProceed();
-  return;
+  const lim=Math.min(p.length,5);
+  list=PASSENGER_SELECTION_MODE==="BOTTOM"?p.slice(-lim):p.slice(0,lim);
+ }else{
+  list=PASSENGER_REQ.map(i=>p[i-1]).filter(Boolean).slice(0,SEAT_COUNT);
  }
 
- const valid=PASSENGER_REQ.map(i=>passengers[i-1]).filter(Boolean);
- const target=Math.min(valid.length,SEAT_COUNT);
+ list.forEach(b=>b.getAttribute("aria-checked")!=="true" && b.click());
 
- valid.slice(0,target).forEach(b=>b.click());
- clickProceed();
+ dStatus().textContent="Passengers Selected";
+ setTimeout(clickProceed,120);
 }
 
-// ================= SEAT ELEMENTS =================
+// ================= SEATS =================
 function seatElements(){
  return [...document.querySelectorAll("svg g")].map(g=>{
   const r=g.querySelector("rect"); if(!r)return null;
-  return {
-   g,
-   id:`${r.x.baseVal.value}-${r.y.baseVal.value}`,
-   label:NL(g.querySelector("text")?.textContent||""),
-   fill:(r.getAttribute("fill")||"").toLowerCase()
-  };
+  return {g,id:`${r.x.baseVal.value}-${r.y.baseVal.value}`,
+   label:NL(g.textContent||""),fill:(r.getAttribute("fill")||"").toLowerCase()};
  }).filter(Boolean);
 }
 
-// ================= WAIT =================
 function waitForSeats(){
  if(!ST)return;
  if(document.querySelector("svg g rect")) scanSeats();
- else setTimeout(waitForSeats, ULTRA_RACE_MODE?60:120);
+ else setTimeout(waitForSeats,60);
 }
 
-// ================= SCAN =================
 function scanSeats(){
  if(!ST)return; kick();
 
- let seats=seatElements().filter(s=>s.fill==="#fff");
- seats=seats.filter(s=>!tried.has(s.id));
-
+ let seats=seatElements().filter(s=>s.fill==="#fff" && !tried.has(s.id));
  if(!seats.length) return location.reload();
 
  const target=getSeatTargetCount(seats.length);
@@ -108,18 +130,20 @@ function scanSeats(){
  availableSeats=seats;
  window.__TARGET_SEATS__=target;
 
+ dSeats().textContent=seats.length;
+
  seatIndex=0;
  seatClicks=0;
 
  assignNextSeat();
 }
 
-// ================= ORIGINAL SEQUENTIAL ENGINE =================
+// ================= ENGINE =================
 function assignNextSeat(){
  if(!ST)return;
 
  if(seatClicks>=window.__TARGET_SEATS__){
-  setTimeout(()=>clickProceed(), ULTRA_RACE_MODE?80:300);
+  setTimeout(clickProceed,120);
   return;
  }
 
@@ -127,27 +151,23 @@ function assignNextSeat(){
  if(!seat)return;
 
  seatIndex++;
-
- setTimeout(()=>clickSeat(seat),
-   ULTRA_RACE_MODE?25:120
- );
+ setTimeout(()=>clickSeat(seat),25);
 }
 
 function clickSeat(seat){
  if(!ST)return; kick();
 
  tried.add(seat.id);
-
- // 🔥 IMPORTANT: increment BEFORE assignment (original logic)
  seatClicks++;
 
+ dClicks().textContent=seatClicks;
+ track();
+ dStatus().textContent="Clicking Seat";
+
  const rect=seat.g.querySelector("rect");
+ ["mousedown","mouseup","click"].forEach(e=>rect.dispatchEvent(new MouseEvent(e,{bubbles:true})));
 
- ["mousedown","mouseup","click"].forEach(e=>
-  rect.dispatchEvent(new MouseEvent(e,{bubbles:true}))
- );
-
- setTimeout(assignSeat, ULTRA_RACE_MODE?30:150);
+ setTimeout(assignSeat,30);
 }
 
 // ================= POPUP =================
@@ -163,33 +183,31 @@ function assignSeat(){
 
  const popup=getSeatPopup();
 
- // 🔁 keep retrying (THIS FIXES FREEZE)
  if(!popup){
-  setTimeout(assignSeat, ULTRA_RACE_MODE?20:80);
+  setTimeout(assignSeat,20);
   return;
  }
 
- const nextPassenger=popup.querySelector(
-   'input[type="checkbox"]:not(:disabled):not(:checked)'
- );
+ const next=popup.querySelector('input[type="checkbox"]:not(:disabled):not(:checked)');
 
- if(!nextPassenger){
-  setTimeout(assignNextSeat, ULTRA_RACE_MODE?20:120);
+ if(!next){
+  dStatus().textContent="All Assigned";
+  seatClicks=window.__TARGET_SEATS__;
+  setTimeout(clickProceed,120);
   return;
  }
 
- setTimeout(()=>{
-  nextPassenger.click();
+ next.click();
+ dStatus().textContent="Assigning";
 
-  if(seatClicks>=window.__TARGET_SEATS__){
-   setTimeout(()=>clickProceed(), ULTRA_RACE_MODE?80:300);
-  }else{
-   setTimeout(assignNextSeat, ULTRA_RACE_MODE?20:120);
-  }
-
- }, ULTRA_RACE_MODE?30:150);
+ if(seatClicks>=window.__TARGET_SEATS__){
+  setTimeout(clickProceed,120);
+ }else{
+  setTimeout(assignNextSeat,20);
+ }
 }
 
 // ================= START =================
+dStatus().textContent="Running";
 selectPassengers();
 waitForSeats();
