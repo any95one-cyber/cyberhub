@@ -3,62 +3,20 @@ let ST=true,tried=new Set(),reloadT=null,lastActivity=Date.now();
 let seatClicks=0,availableSeats=[],seatIndex=0;
 
 const TOAST_TEXT="unavailable";
-let handlingError=false;
-
-// ================= FLOAT BUTTON =================
-const FB=document.createElement("button");
-FB.textContent="Pause";
-FB.style.cssText=`position:fixed;top:20px;left:20px;z-index:999999;padding:14px 22px;background:#e42f40;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:16px;`;
-(document.body||document.documentElement).appendChild(FB);
-
-function updateButton(){
- FB.textContent=ST?"Pause":"Start";
- FB.style.background=ST?"#e42f40":"#1bd158";
-}
-updateButton();
-
-function getSeatPopup(){
- return window.innerWidth < 768
-  ? document.querySelector('div[role="dialog"]')
-  : document.querySelector('div.hidden.md\\:block');
-}
-
-// ================= STATUS PANEL =================
-const SP=document.createElement("div");
-SP.style.cssText=`position:fixed;top:80px;left:20px;z-index:999999;background:#111;color:#0f0;padding:12px;border-radius:8px;font-family:monospace;min-width:180px;`;
-SP.innerHTML=`
-⚡ Seat Bot<br>
-Seats: <span id="sp-seats">0</span><br>
-Clicks: <span id="sp-clicks">0</span><br>
-Speed: <span id="sp-speed">0</span>/s<br>
-Status: <span id="sp-status">Idle</span>
-`;
-(document.body||document.documentElement).appendChild(SP);
-
-const spSeats=()=>document.getElementById("sp-seats");
-const spClicks=()=>document.getElementById("sp-clicks");
-const spSpeed=()=>document.getElementById("sp-speed");
-const spStatus=()=>document.getElementById("sp-status");
-
-// ================= SPEED =================
-let clickHistory=[];
-function trackClick(){
- const now=Date.now();
- clickHistory.push(now);
- clickHistory=clickHistory.filter(t=>now-t<1000);
- if(spSpeed()) spSpeed().textContent=clickHistory.length;
-}
 
 // ================= HELPERS =================
 const RD=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
 const SN=s=>Number(s.label.match(/\d+/)?.[0]||0);
+const NL=t=>t.replace(/\s+/g," ").trim();
+
+function kick(){ lastActivity=Date.now(); }
 
 function getSeatTargetCount(total){
  if(SEAT_COUNT==='All') return Math.min(total,5);
  return SEAT_COUNT;
 }
 
-// ================= PROCEED FIX =================
+// ================= PROCEED (FIXED) =================
 function clickProceed(){
  let tries=0;
 
@@ -77,41 +35,11 @@ function clickProceed(){
      return;
    }
 
-   if(tries++<20){
-     setTimeout(attempt,40);
-   }
+   if(tries++<20) setTimeout(attempt,40);
  };
 
  setTimeout(attempt, ULTRA_RACE_MODE?90:150);
 }
-
-// ================= BUTTON =================
-FB.onclick=()=>{
- ST=!ST;
- updateButton();
- if(spStatus()) spStatus().textContent=ST?"Running":"Paused";
-
- if(ST){
-   if(document.querySelector("svg g rect")) waitForSeats();
-   else selectPassengers();
- }
-};
-
-// ================= ERROR OBSERVER =================
-function onSeatUnavailable(){
- if(handlingError)return;
- handlingError=true;
- seatClicks=0;seatIndex=0;availableSeats=[];
- setTimeout(()=>{handlingError=false;scanSeats();},200);
-}
-
-new MutationObserver(m=>{
- for(const x of m)
-  for(const n of x.addedNodes)
-   if(n.nodeType===1 && n.innerText?.toLowerCase().includes(TOAST_TEXT)){
-    onSeatUnavailable();return;
-   }
-}).observe(document.body,{childList:true,subtree:true});
 
 // ================= PASSENGERS =================
 function getVisiblePassengers(){
@@ -135,9 +63,6 @@ function selectPassengers(){
   });
 
   clickProceed();
-  if(spStatus()) spStatus().textContent="Passengers Selected";
-
-  if(ULTRA_RACE_MODE) setTimeout(waitForSeats,30);
   return;
  }
 
@@ -145,47 +70,43 @@ function selectPassengers(){
  const target=Math.min(valid.length,SEAT_COUNT);
 
  valid.slice(0,target).forEach(b=>b.click());
-
  clickProceed();
- if(spStatus()) spStatus().textContent="Passengers Selected";
-
- if(ULTRA_RACE_MODE) setTimeout(waitForSeats,30);
 }
 
-// ================= SEATS =================
+// ================= SEAT ELEMENTS =================
 function seatElements(){
  return [...document.querySelectorAll("svg g")].map(g=>{
-  const r=g.querySelector("rect");if(!r)return null;
+  const r=g.querySelector("rect"); if(!r)return null;
   return {
    g,
    id:`${r.x.baseVal.value}-${r.y.baseVal.value}`,
-   label:g.textContent||"",
+   label:NL(g.querySelector("text")?.textContent||""),
    fill:(r.getAttribute("fill")||"").toLowerCase()
   };
  }).filter(Boolean);
 }
 
+// ================= WAIT =================
 function waitForSeats(){
  if(!ST)return;
  if(document.querySelector("svg g rect")) scanSeats();
- else setTimeout(waitForSeats,ULTRA_RACE_MODE?40:120);
+ else setTimeout(waitForSeats, ULTRA_RACE_MODE?60:120);
 }
 
+// ================= SCAN =================
 function scanSeats(){
- if(!ST)return;
+ if(!ST)return; kick();
 
  let seats=seatElements().filter(s=>s.fill==="#fff");
  seats=seats.filter(s=>!tried.has(s.id));
 
- if(!seats.length) return smartReload();
+ if(!seats.length) return location.reload();
 
  const target=getSeatTargetCount(seats.length);
- if(target<=0) return smartReload();
+ if(target<=0) return location.reload();
 
  availableSeats=seats;
  window.__TARGET_SEATS__=target;
-
- if(spSeats()) spSeats().textContent=seats.length;
 
  seatIndex=0;
  seatClicks=0;
@@ -193,112 +114,82 @@ function scanSeats(){
  assignNextSeat();
 }
 
-// ================= ASSIGN SEQUENTIAL SEAT FLOW =================
-
+// ================= ORIGINAL SEQUENTIAL ENGINE =================
 function assignNextSeat(){
- if(!ST) return;
+ if(!ST)return;
 
- // ✅ stop when done
- if(seatClicks >= window.__TARGET_SEATS__){
-   clickProceed();
-   return;
+ if(seatClicks>=window.__TARGET_SEATS__){
+  setTimeout(()=>clickProceed(), ULTRA_RACE_MODE?80:300);
+  return;
  }
 
- const seat = availableSeats[seatIndex];
- if(!seat) return;
+ const seat=availableSeats[seatIndex];
+ if(!seat)return;
 
- clickSeat(seat);
+ seatIndex++;
+
+ setTimeout(()=>clickSeat(seat),
+   ULTRA_RACE_MODE?25:120
+ );
 }
 
-// STEP 1: CLICK SEAT
 function clickSeat(seat){
- if(!ST) return;
+ if(!ST)return; kick();
 
  tried.add(seat.id);
- lastActivity = Date.now();
 
- const rect = seat.g.querySelector("rect");
+ // 🔥 IMPORTANT: increment BEFORE assignment (original logic)
+ seatClicks++;
 
- ["mousedown","mouseup","click"].forEach(e =>
-   rect.dispatchEvent(new MouseEvent(e,{bubbles:true}))
+ const rect=seat.g.querySelector("rect");
+
+ ["mousedown","mouseup","click"].forEach(e=>
+  rect.dispatchEvent(new MouseEvent(e,{bubbles:true}))
  );
 
- if(spStatus()) spStatus().textContent = "Seat Clicked";
-
- // ✅ wait for popup before continuing
- waitForPopupAndAssign();
+ setTimeout(assignSeat, ULTRA_RACE_MODE?30:150);
 }
 
-// STEP 2: WAIT FOR POPUP
-function waitForPopupAndAssign(){
- let tries = 0;
-
- const check = () => {
-   const popup = getSeatPopup();
-
-   if(popup){
-     assignPassengerFromPopup(popup);
-     return;
-   }
-
-   if(tries++ < 25){
-     setTimeout(check, ULTRA_RACE_MODE ? 15 : 60);
-   } else {
-     // fallback → skip seat
-     seatIndex++;
-     assignNextSeat();
-   }
- };
-
- check();
+// ================= POPUP =================
+function getSeatPopup(){
+ return document.querySelector('div[role="dialog"]')
+     || document.querySelector('div.hidden.md\\:block')
+     || document.querySelector('input[type="checkbox"]')?.closest("div");
 }
 
-// STEP 3: ASSIGN PASSENGER
-function assignPassengerFromPopup(popup){
- const checkbox = popup.querySelector(
+// ================= ASSIGN =================
+function assignSeat(){
+ if(!ST)return;
+
+ const popup=getSeatPopup();
+
+ // 🔁 keep retrying (THIS FIXES FREEZE)
+ if(!popup){
+  setTimeout(assignSeat, ULTRA_RACE_MODE?20:80);
+  return;
+ }
+
+ const nextPassenger=popup.querySelector(
    'input[type="checkbox"]:not(:disabled):not(:checked)'
  );
 
- if(!checkbox){
-   // no passenger → skip
-   seatIndex++;
-   assignNextSeat();
-   return;
+ if(!nextPassenger){
+  setTimeout(assignNextSeat, ULTRA_RACE_MODE?20:120);
+  return;
  }
 
- checkbox.click();
+ setTimeout(()=>{
+  nextPassenger.click();
 
- // ✅ only increment AFTER assignment
- seatClicks++;
- seatIndex++;
+  if(seatClicks>=window.__TARGET_SEATS__){
+   setTimeout(()=>clickProceed(), ULTRA_RACE_MODE?80:300);
+  }else{
+   setTimeout(assignNextSeat, ULTRA_RACE_MODE?20:120);
+  }
 
- if(spClicks()) spClicks().textContent = seatClicks;
- trackClick();
- if(spStatus()) spStatus().textContent = "Assigning";
-
- // small delay → UI stability
- setTimeout(assignNextSeat, ULTRA_RACE_MODE ? 15 : 80);
+ }, ULTRA_RACE_MODE?30:150);
 }
-
-// ================= RELOAD =================
-function smartReload(){
- if(!ST||reloadT)return;
- if(spStatus()) spStatus().textContent="Reloading";
-
- reloadT=setTimeout(()=>{
-  tried.clear();
-  reloadT=null;
-  location.reload();
- },RD(4000,7000));
-}
-
-// ================= WATCHDOG =================
-setInterval(()=>{
- if(!ST)return;
- if(Date.now()-lastActivity>45000) location.reload();
-},4000);
 
 // ================= START =================
-if(spStatus()) spStatus().textContent="Running";
 selectPassengers();
 waitForSeats();
