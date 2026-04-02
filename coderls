@@ -1,10 +1,3 @@
-// ================= CONFIG =================
-const PASSENGER_REQ=[1,2,3,4];
-const SEAT_COUNT='All'; // number or 'All'
-const PASSENGER_SELECTION_MODE="TOP"; // TOP | BOTTOM | ALL
-
-const ULTRA_RACE_MODE=true;
-
 // ================= STATE =================
 let ST=true,tried=new Set(),lastActivity=Date.now();
 let seatClicks=0,availableSeats=[],seatIndex=0;
