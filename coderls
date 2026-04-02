@@ -8,9 +8,8 @@ let handlingError=false;
 // ================= FLOAT BUTTON =================
 const FB=document.createElement("button");
 FB.textContent="Pause";
-FB.style.cssText=`position:fixed;top:20px;left:20px;z-index:999999;padding:14px 22px;background:#e42f40;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:16px;box-shadow:0 2px 6px rgba(0,0,0,.3)`;
-
-(document.body || document.documentElement).appendChild(FB);
+FB.style.cssText=`position:fixed;top:20px;left:20px;z-index:999999;padding:14px 22px;background:#e42f40;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:16px;`;
+document.body.appendChild(FB);
 
 function updateButton(){
  FB.textContent=ST?"Pause":"Start";
@@ -20,113 +19,58 @@ updateButton();
 
 // ================= STATUS PANEL =================
 const SP=document.createElement("div");
-
-SP.style.cssText=`
- position:fixed !important;
- top:80px !important;
- left:20px !important;
- z-index:999999 !important;
- background:#111 !important;
- color:#0f0 !important;
- padding:12px 16px !important;
- border-radius:8px !important;
- font-size:13px !important;
- font-family:monospace !important;
- box-shadow:0 2px 8px rgba(0,0,0,.6) !important;
- min-width:200px !important;
- line-height:1.5 !important;
-`;
+SP.style.cssText=`position:fixed;top:80px;left:20px;z-index:999999;background:#111;color:#0f0;padding:12px;border-radius:8px;font-family:monospace;`;
 
 SP.innerHTML=`
-<b>⚡ Seat Bot</b><br>
-Seats Found: <span id="sp-seats">0</span><br>
+Seats: <span id="sp-seats">0</span><br>
 Clicks: <span id="sp-clicks">0</span><br>
 Speed: <span id="sp-speed">0</span>/s<br>
 Status: <span id="sp-status">Idle</span>
 `;
+document.body.appendChild(SP);
 
-window.addEventListener("load", ()=>{
- (document.body || document.documentElement).appendChild(SP);
-});
-
-// make draggable
-SP.style.cursor="move";
-SP.onmousedown=e=>{
- let x=e.clientX-SP.offsetLeft;
- let y=e.clientY-SP.offsetTop;
- document.onmousemove=e=>{
-  SP.style.left=(e.clientX-x)+"px";
-  SP.style.top=(e.clientY-y)+"px";
- };
- document.onmouseup=()=>document.onmousemove=null;
-};
-
-const spSeats=()=>document.querySelector("#sp-seats");
-const spClicks=()=>document.querySelector("#sp-clicks");
-const spSpeed=()=>document.querySelector("#sp-speed");
-const spStatus=()=>document.querySelector("#sp-status");
+const spSeats=()=>document.getElementById("sp-seats");
+const spClicks=()=>document.getElementById("sp-clicks");
+const spSpeed=()=>document.getElementById("sp-speed");
+const spStatus=()=>document.getElementById("sp-status");
 
 // ================= SPEED =================
 let clickHistory=[];
 function trackClick(){
  const now=Date.now();
  clickHistory.push(now);
- clickHistory = clickHistory.filter(t=>now - t < 1000);
- spSpeed().textContent = clickHistory.length;
+ clickHistory=clickHistory.filter(t=>now-t<1000);
+ spSpeed().textContent=clickHistory.length;
 }
 
 // ================= HELPERS =================
 const RD=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
-const NL=t=>t.replace(/\s+/g," ").trim();
-const kick=()=>lastActivity=Date.now();
 const SN=s=>Number(s.label.match(/\d+/)?.[0]||0);
 
-function isLowerSeat(label){
- return /\b(LL|RL|LOWER)\b/.test(NL(label).toUpperCase());
-}
-
-function getSeatTargetCount(total){
- if(SEAT_COUNT==='All') return Math.min(total,5);
- return SEAT_COUNT;
-}
-
-function RD_FAST(minF,maxF,minN,maxN){
- const t=(SEAT_COUNT==='All')?5:SEAT_COUNT;
- return t>=3
-  ? Math.floor(Math.random()*(maxF-minF+1))+minF
-  : Math.floor(Math.random()*(maxN-minN+1))+minN;
+// ================= PROCEED FIX =================
+function clickProceed(){
+ let tries=0;
+ const attempt=()=>{
+  const btn=document.querySelector('button[type="submit"]');
+  if(btn && !btn.disabled){
+    btn.click();
+    return;
+  }
+  if(tries++<15) setTimeout(attempt,40);
+ };
+ setTimeout(attempt, ULTRA_RACE_MODE?80:150);
 }
 
 // ================= BUTTON =================
 FB.onclick=()=>{
  ST=!ST;
  updateButton();
- if(spStatus()) spStatus().textContent = ST ? "Running" : "Paused";
-
+ spStatus().textContent=ST?"Running":"Paused";
  if(ST){
-  if(document.querySelector("svg g rect")){
-    waitForSeats();
-  }else{
-    selectPassengers();
-  }
+  if(document.querySelector("svg g rect")) waitForSeats();
+  else selectPassengers();
  }
 };
-
-// ================= ERROR =================
-function onSeatUnavailable(){
- if(handlingError)return;
- handlingError=true;
- seatClicks=0;seatIndex=0;availableSeats=[];
- setTimeout(()=>{handlingError=false;scanSeats();},200);
-}
-
-new MutationObserver(m=>{
- for(const x of m)
-  for(const n of x.addedNodes)
-   if(n.nodeType===1 && n.innerText?.toLowerCase().includes(TOAST_TEXT)){
-    onSeatUnavailable();return;
-   }
-}).observe(document.body,{childList:true,subtree:true});
 
 // ================= PASSENGERS =================
 function getVisiblePassengers(){
@@ -139,31 +83,21 @@ function selectPassengers(){
  if(!passengers.length) return setTimeout(selectPassengers,50);
 
  if(SEAT_COUNT==='All'){
-  const total=passengers.length;
-  const limit=Math.min(total,5);
-
-  let selected = PASSENGER_SELECTION_MODE==="BOTTOM"
-    ? passengers.slice(total-limit)
+  const limit=Math.min(passengers.length,5);
+  const selected = PASSENGER_SELECTION_MODE==="BOTTOM"
+    ? passengers.slice(-limit)
     : passengers.slice(0,limit);
 
-  selected.forEach(b=>b.getAttribute("aria-checked")!=="true" && b.click());
-
-  document.querySelector('button[type="submit"]:not([disabled])')?.click();
-  if(spStatus()) spStatus().textContent="Passengers Selected";
-
-  if(ULTRA_RACE_MODE) setTimeout(waitForSeats,30);
+  selected.forEach(b=>!b.checked && b.click());
+  clickProceed();
   return;
  }
 
  const valid=PASSENGER_REQ.map(i=>passengers[i-1]).filter(Boolean);
  const target=Math.min(valid.length,SEAT_COUNT);
+ valid.slice(0,target).forEach(b=>b.click());
 
- valid.slice(0,target).forEach(b=>b.getAttribute("aria-checked")!=="true" && b.click());
-
- document.querySelector('button[type="submit"]:not([disabled])')?.click();
- if(spStatus()) spStatus().textContent="Passengers Selected";
-
- if(ULTRA_RACE_MODE) setTimeout(waitForSeats,30);
+ clickProceed();
 }
 
 // ================= SEATS =================
@@ -173,9 +107,8 @@ function seatElements(){
   return {
    g,
    id:`${r.x.baseVal.value}-${r.y.baseVal.value}`,
-   label:NL(g.querySelector("text")?.textContent||""),
-   fill:(r.getAttribute("fill")||"").toLowerCase(),
-   pwd:!!g.querySelector('image[href*="disability"]')
+   label:g.textContent||"",
+   fill:(r.getAttribute("fill")||"").toLowerCase()
   };
  }).filter(Boolean);
 }
@@ -183,137 +116,47 @@ function seatElements(){
 function waitForSeats(){
  if(!ST)return;
  if(document.querySelector("svg g rect")) scanSeats();
- else setTimeout(waitForSeats,ULTRA_RACE_MODE?40:120);
+ else setTimeout(waitForSeats,40);
 }
 
 function scanSeats(){
- if(!ST)return;kick();
- if(spStatus()) spStatus().textContent="Scanning";
-
- let seats=seatElements().filter(s=>{
-  if(!["#fff","#ffffff","rgb(255,255,255)"].includes(s.fill))return false;
-  if(IS_DISABILITY_SEAT&&!s.pwd)return false;
-  if(!IS_DISABILITY_SEAT&&s.pwd)return false;
-  if(seatskip.includes(SN(s).toString()))return false;
-  return true;
- });
-
+ let seats=seatElements().filter(s=>s.fill==="#fff");
  seats=seats.filter(s=>!tried.has(s.id));
- if(!seats.length)return smartReload();
+ if(!seats.length)return location.reload();
 
- const target=getSeatTargetCount(seats.length);
- if(target<=0)return smartReload();
+ availableSeats=seats;
+ window.__TARGET_SEATS__=Math.min(seats.length,5);
 
- let lower=seats.filter(s=>isLowerSeat(s.label));
- let pool=(PREFER_LOWER_SEATS && lower.length>=target)?lower:seats;
-
- const A=[],B=[];
- for(const s of pool){
-  const n=SN(s);
-  (START_SEAT==null||n>=START_SEAT)?A.push(s):B.push(s);
- }
-
- A.sort((a,b)=>SN(a)-SN(b));
- B.sort((a,b)=>SN(b)-SN(a));
-
- availableSeats=[...A,...B];
- window.__TARGET_SEATS__=target;
-
- if(spSeats()) spSeats().textContent=availableSeats.length;
+ spSeats().textContent=seats.length;
 
  seatIndex=0;
  seatClicks=0;
-
  assignNextSeat();
 }
 
 // ================= ASSIGN =================
 function assignNextSeat(){
- if(!ST)return;
-
- if(seatClicks>=window.__TARGET_SEATS__){
-  document.querySelector("div.flex-col button:not([disabled])")?.click();
-  return;
- }
+ if(seatClicks>=window.__TARGET_SEATS__) return;
 
  const seat=availableSeats[seatIndex++];
  if(!seat)return;
 
- setTimeout(()=>clickSeat(seat),
-  ULTRA_RACE_MODE?RD(5,15):RD_FAST(25,60,80,140));
+ setTimeout(()=>clickSeat(seat), ULTRA_RACE_MODE?10:50);
 }
 
 function clickSeat(seat){
- if(!ST)return;kick();
-
  tried.add(seat.id);
  seatClicks++;
- if(spClicks()) spClicks().textContent=seatClicks;
+ spClicks().textContent=seatClicks;
  trackClick();
- if(spStatus()) spStatus().textContent="Clicking";
 
  const rect=seat.g.querySelector("rect");
- ["mousedown","mouseup","click"].forEach(e=>
-  rect.dispatchEvent(new MouseEvent(e,{bubbles:true}))
- );
+ rect.dispatchEvent(new MouseEvent("click",{bubbles:true}));
 
- setTimeout(assignSeat,
-  ULTRA_RACE_MODE?RD(5,20):RD_FAST(30,70,90,160));
+ setTimeout(assignNextSeat, ULTRA_RACE_MODE?10:60);
 }
-
-function getSeatPopup(){
- return window.innerWidth<768
-  ? document.querySelector('div[role="dialog"]')
-  : document.querySelector('div.hidden.md\\:block');
-}
-
-let retry=0;
-
-function assignSeat(){
- const popup=getSeatPopup();
-
- if(!popup){
-  if(retry++<15) return setTimeout(assignSeat,ULTRA_RACE_MODE?10:80);
-  retry=0;
-  return assignNextSeat();
- }
-
- retry=0;
- if(spStatus()) spStatus().textContent="Assigning";
-
- const p=popup.querySelector('input[type="checkbox"]:not(:disabled):not(:checked)');
- if(!p)return setTimeout(assignNextSeat,50);
-
- p.click();
-
- if(seatClicks>=window.__TARGET_SEATS__){
-  setTimeout(()=>{
-    document.querySelector("div.flex-col button:not([disabled])")?.click();
-  },ULTRA_RACE_MODE?50:300);
- }else{
-  setTimeout(assignNextSeat,
-    ULTRA_RACE_MODE?RD(5,20):RD_FAST(40,90,120,200));
- }
-}
-
-// ================= RELOAD =================
-function smartReload(){
- if(!ST||reloadT)return;
- if(spStatus()) spStatus().textContent="Reloading";
- reloadT=setTimeout(()=>{
-  tried.clear();
-  reloadT=null;
-  location.reload();
- },RD(4000,7000));
-}
-
-// ================= WATCHDOG =================
-setInterval(()=>{
- if(!ST)return;
- if(Date.now()-lastActivity>45000) location.reload();
-},4000);
 
 // ================= START =================
-if(spStatus()) spStatus().textContent="Running";
+spStatus().textContent="Running";
 selectPassengers();
 waitForSeats();
