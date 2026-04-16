@@ -118,7 +118,12 @@ function scanSeats(){
  let free=seats.filter(s=>
   s.fill==="#fff" &&
   !s.pwd &&
-  !seatskip.some(x=>s.label.includes(x)) &&
+  !seatskip.some(x => {const normalize = str => str.replace(/\s+/g, "").toLowerCase();
+
+  const label = normalize(s.label);
+  const skip = normalize(x);
+  const seatNum = label.match(/^\d+/)?.[0];
+  if (/\d+[a-z]/i.test(skip)) { return label === skip; } return seatNum === skip;}) &&
   !tried.has(s.id)
  );
 
