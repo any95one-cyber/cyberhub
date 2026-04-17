@@ -29,12 +29,30 @@ const skipRules = seatskip.map(x => {
 
 function shouldSkipSeat(label){
   const normLabel = normalize(label);
-  const seatNum = parseInt(normLabel.match(/^\d+/)?.[0], 10);
+
+  // extract number safely
+  const numMatch = normLabel.match(/\d+/);
+  const seatNum = numMatch ? parseInt(numMatch[0], 10) : null;
 
   return skipRules.some(rule => {
-    if(rule.type === "exact") return normLabel === rule.value;
-    if(rule.type === "number") return String(seatNum) === rule.value;
-    if(rule.type === "range") return seatNum >= rule.min && seatNum <= rule.max;
+
+    // exact match (flexible: ignores order like "U11" vs "11U")
+    if(rule.type === "exact"){
+      return normLabel.includes(rule.value);
+    }
+
+    // number-only match
+    if(rule.type === "number"){
+      return seatNum !== null && String(seatNum) === rule.value;
+    }
+
+    // range match
+    if(rule.type === "range"){
+      return seatNum !== null &&
+             seatNum >= rule.min &&
+             seatNum <= rule.max;
+    }
+
     return false;
   });
 }
