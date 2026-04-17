@@ -29,15 +29,22 @@ if(rule.type === "exact"){
 function shouldSkipSeat(label){
   const rawLabel = label;
   const normLabel = normalize(label);
-  const numMatch = rawLabel.match(/\d+/);
+  const clean = rawLabel.replace(/[^\d]/g, " ");
+  const numMatch = clean.match(/\d+/);
   const seatNum = numMatch ? parseInt(numMatch[0], 10) : null;
+
   return skipRules.some(rule => {
     if(rule.type === "exact"){
-      return normLabel === rule.value;
+      const labelNum = normLabel.match(/\d+/)?.[0];
+      const labelSuffix = normLabel.replace(/\d+/g, "");
+      const ruleNum = rule.value.match(/\d+/)?.[0];
+      const ruleSuffix = rule.value.replace(/\d+/g, "");
+      return labelNum === ruleNum && labelSuffix === ruleSuffix;
     }
     if(rule.type === "number"){
       return seatNum !== null && String(seatNum) === rule.value;
     }
+
     if(rule.type === "range"){
       return seatNum !== null &&
              seatNum >= rule.min &&
@@ -152,7 +159,11 @@ function scanSeats(){
   return{
    g,
    id:`${r.x.baseVal.value}-${r.y.baseVal.value}`,
-   label:NL(g.querySelector("text")?.textContent||""),
+   label: NL(
+  [...g.querySelectorAll("text tspan")]
+    .map(t => t.textContent)
+    .join(" ") || g.querySelector("text")?.textContent || ""
+),
    fill:(r.getAttribute("fill")||"").toLowerCase(),
    pwd:!!g.querySelector("image")
   };
