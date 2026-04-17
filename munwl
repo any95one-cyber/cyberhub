@@ -28,10 +28,11 @@ const skipRules = seatskip.map(x => {
 });
 
 function shouldSkipSeat(label){
+  const rawLabel = label; // original
   const normLabel = normalize(label);
-
-  // extract number safely
-  const numMatch = normLabel.match(/\d+/);
+  
+  const numMatch = rawLabel.match(/\d+/); // 👈 IMPORTANT CHANGE
+  const seatNum = numMatch ? parseInt(numMatch[0], 10) : null;
   const seatNum = numMatch ? parseInt(numMatch[0], 10) : null;
 
   return skipRules.some(rule => {
