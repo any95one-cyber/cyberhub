@@ -9,51 +9,40 @@ const normalize = str => str.replace(/\s+/g, "").toLowerCase();
 
 const skipRules = seatskip.map(x => {
   const raw = x.trim();
-
+if(rule.type === "exact"){
+  return normalize(label) === rule.value;
+}
   // range support (e.g. "1-30")
   if (/^\d+\s*-\s*\d+$/.test(raw)) {
     const [a, b] = raw.split("-").map(n => parseInt(n.trim(), 10));
     return { type: "range", min: Math.min(a,b), max: Math.max(a,b) };
   }
-
   const norm = normalize(raw);
-
   // exact seat (e.g. "9A", "9 A")
   if (/\d+[a-z]/i.test(norm)) {
     return { type: "exact", value: norm };
   }
-
   // number-only (e.g. "9")
   return { type: "number", value: norm };
 });
 
 function shouldSkipSeat(label){
-  const rawLabel = label; // original
+  const rawLabel = label;
   const normLabel = normalize(label);
-  
-  const numMatch = rawLabel.match(/\d+/); // 👈 IMPORTANT CHANGE
+  const numMatch = rawLabel.match(/\d+/);
   const seatNum = numMatch ? parseInt(numMatch[0], 10) : null;
-  const seatNum = numMatch ? parseInt(numMatch[0], 10) : null;
-
   return skipRules.some(rule => {
-
-    // exact match (flexible: ignores order like "U11" vs "11U")
     if(rule.type === "exact"){
-      return normLabel.includes(rule.value);
+      return normLabel === rule.value;
     }
-
-    // number-only match
     if(rule.type === "number"){
       return seatNum !== null && String(seatNum) === rule.value;
     }
-
-    // range match
     if(rule.type === "range"){
       return seatNum !== null &&
              seatNum >= rule.min &&
              seatNum <= rule.max;
     }
-
     return false;
   });
 }
