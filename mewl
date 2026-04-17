@@ -4,6 +4,56 @@ let scanDone=0,lastDom=0,reloadT=null,lastActivity=Date.now();
 let nextReloadTime=0,alertAudio=null,lastSeatInfo="";
 const startTime=Date.now();
 
+// ===== SKIP ENGINE =====
+const normalize = str => str.replace(/\s+/g, "").toLowerCase();
+
+const skipRules = seatskip.map(x => {
+  const raw = x.trim();
+if(rule.type === "exact"){
+  return normalize(label) === rule.value;
+}
+  // range support (e.g. "1-30")
+  if (/^\d+\s*-\s*\d+$/.test(raw)) {
+    const [a, b] = raw.split("-").map(n => parseInt(n.trim(), 10));
+    return { type: "range", min: Math.min(a,b), max: Math.max(a,b) };
+  }
+  const norm = normalize(raw);
+  // exact seat (e.g. "9A", "9 A")
+  if (/\d+[a-z]/i.test(norm)) {
+    return { type: "exact", value: norm };
+  }
+  // number-only (e.g. "9")
+  return { type: "number", value: norm };
+});
+
+function shouldSkipSeat(label){
+  const rawLabel = label;
+  const normLabel = normalize(label);
+  const clean = rawLabel.replace(/[^\d]/g, " ");
+  const numMatch = clean.match(/\d+/);
+  const seatNum = numMatch ? parseInt(numMatch[0], 10) : null;
+
+  return skipRules.some(rule => {
+    if(rule.type === "exact"){
+      const labelNum = normLabel.match(/\d+/)?.[0];
+      const labelSuffix = normLabel.replace(/\d+/g, "");
+      const ruleNum = rule.value.match(/\d+/)?.[0];
+      const ruleSuffix = rule.value.replace(/\d+/g, "");
+      return labelNum === ruleNum && labelSuffix === ruleSuffix;
+    }
+    if(rule.type === "number"){
+      return seatNum !== null && String(seatNum) === rule.value;
+    }
+
+    if(rule.type === "range"){
+      return seatNum !== null &&
+             seatNum >= rule.min &&
+             seatNum <= rule.max;
+    }
+    return false;
+  });
+}
+
 const RD=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
 const NL=t=>t.replace(/\s+/g," ").trim();
 const kick=()=>lastActivity=Date.now();
@@ -109,7 +159,11 @@ function scanSeats(){
   return{
    g,
    id:`${r.x.baseVal.value}-${r.y.baseVal.value}`,
-   label:NL(g.querySelector("text")?.textContent||""),
+   label: NL(
+  [...g.querySelectorAll("text tspan")]
+    .map(t => t.textContent)
+    .join(" ") || g.querySelector("text")?.textContent || ""
+),
    fill:(r.getAttribute("fill")||"").toLowerCase(),
    pwd:!!g.querySelector("image")
   };
@@ -118,12 +172,7 @@ function scanSeats(){
  let free=seats.filter(s=>
   s.fill==="#fff" &&
   !s.pwd &&
-  !seatskip.some(x => {const normalize = str => str.replace(/\s+/g, "").toLowerCase();
-
-  const label = normalize(s.label);
-  const skip = normalize(x);
-  const seatNum = label.match(/^\d+/)?.[0];
-  if (/\d+[a-z]/i.test(skip)) { return label === skip; } return seatNum === skip;}) &&
+  !shouldSkipSeat(s.label) &&
   !tried.has(s.id)
  );
 
