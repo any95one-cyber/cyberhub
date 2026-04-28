@@ -1,4 +1,4 @@
-let stopScript = false, reloadEnabled = true, handlingFailed = false;
+let stopScript = false, reloadEnabled = true, handlingFailed = false; 
 let lastClickedSeat = null, tried = new Set();
 let scanDone = 0, lastDom = 0, reloadT = null, lastActivity = Date.now();
 let nextReloadTime = 0, alertAudio = null, lastSeatInfo = "";
@@ -12,7 +12,6 @@ const skipRules = seatskip
   .map(x => {
     const raw = x.trim();
 
-    // range
     if (/^\d+\s*-\s*\d+$/.test(raw)) {
       const [a, b] = raw.split("-").map(n => parseInt(n.trim(), 10));
       return { type: "range", min: Math.min(a,b), max: Math.max(a,b) };
@@ -20,18 +19,15 @@ const skipRules = seatskip
 
     const norm = normalize(raw);
 
-    // exact seat
     if (/\d+[a-z]/i.test(norm)) {
       return { type: "exact", value: norm };
     }
 
-    // number
     return { type: "number", value: norm };
   });
 
 function shouldSkipSeat(label){
   const normLabel = normalize(label);
-
   const clean = label.replace(/[^\d]/g, " ");
   const numMatch = clean.match(/\d+/);
   const seatNum = numMatch ? parseInt(numMatch[0], 10) : null;
@@ -41,10 +37,8 @@ function shouldSkipSeat(label){
     if(rule.type === "exact"){
       const labelNum = normLabel.match(/\d+/)?.[0];
       const labelSuffix = normLabel.replace(/\d+/g, "");
-
       const ruleNum = rule.value.match(/\d+/)?.[0];
       const ruleSuffix = rule.value.replace(/\d+/g, "");
-
       return labelNum === ruleNum && labelSuffix === ruleSuffix;
     }
 
@@ -127,41 +121,79 @@ function handleFailed(){
  },300);
 }
 
-// ===== PASSENGER SELECT =====
+// ===== PASSENGER SELECT (FIXED) =====
 function selectPassengers(){
- const get=()=>[...document.querySelectorAll('button[role="checkbox"]')].filter(b=>b.offsetParent!==null);
+  const get = () => {
+    const all = [...document.querySelectorAll('button[role="checkbox"]')]
+      .filter(b => b.offsetParent !== null);
 
- const run=ps=>{
-  PASSENGER_REQ.forEach((n,i)=>{
-   const b=ps[n-1];
-   if(b && b.getAttribute("aria-checked")!=="true")
-    setTimeout(()=>b.click(),i*delay(120,300));
+    const seen = new Set();
+
+    return all.filter(b => {
+      const card = b.closest('[class*="bg-white"]');
+      if (!card) return false;
+
+      const key = card.innerText.slice(0, 80);
+      if (seen.has(key)) return false;
+
+      seen.add(key);
+      return true;
+    });
+  };
+
+  const run = (ps) => {
+    PASSENGER_REQ.forEach((n, i) => {
+      const b = ps[n - 1];
+
+      if (b && b.getAttribute("aria-checked") !== "true") {
+        setTimeout(() => b.click(), i * RD(120, 250));
+      }
+    });
+
+    setTimeout(() => {
+      const btn = [...document.querySelectorAll('button[type="submit"]')]
+        .find(b => b.innerText.trim().toLowerCase() === "proceed" && !b.disabled);
+
+      if (btn) btn.click();
+    }, PASSENGER_REQ.length * RD(150, 250));
+  };
+
+  const ex = get();
+  if (ex.length) return run(ex);
+
+  const o = new MutationObserver(()=>{
+    const ps = get();
+    if(ps.length){
+      o.disconnect();
+      run(ps);
+    }
   });
 
-  setTimeout(()=>{
-   document.querySelector('button[type="submit"]:not([disabled])')?.click();
-  },PASSENGER_REQ.length*delay(200,400)+delay(300,600));
- };
-
- const ex=get();
- if(ex.length)return run(ex);
-
- const o=new MutationObserver(()=>{
-  const ps=get();
-  if(ps.length){o.disconnect();run(ps);}
- });
- o.observe(document.body,{childList:true,subtree:true});
+  o.observe(document.body,{childList:true,subtree:true});
 }
 
-// ===== WAIT =====
+// ===== INSTANT WAIT =====
 function waitForSeats(){
- if(stopScript||onPay())return;
+  if(stopScript||onPay())return;
 
- if(document.querySelector("svg g rect")){
-  document.querySelector("div > div.pt-7.overflow-auto")
-  ?.classList.replace("max-h-[450px]","max-h-[680px]");
-  requestAnimationFrame(scanSeats);
- } else setTimeout(waitForSeats,120);
+  const startScan = () => {
+    document.querySelector("div > div.pt-7.overflow-auto")
+      ?.classList.replace("max-h-[450px]","max-h-[680px]");
+    requestAnimationFrame(scanSeats);
+  };
+
+  if(document.querySelector("svg g rect")){
+    return startScan();
+  }
+
+  const obs = new MutationObserver(()=>{
+    if(document.querySelector("svg g rect")){
+      obs.disconnect();
+      startScan();
+    }
+  });
+
+  obs.observe(document.body,{childList:true,subtree:true});
 }
 
 // ===== SCAN =====
@@ -173,11 +205,7 @@ function scanSeats(){
   return{
    g,
    id:`${r.x.baseVal.value}-${r.y.baseVal.value}`,
-   label: NL(
-     [...g.querySelectorAll("text tspan")]
-       .map(t=>t.textContent)
-       .join(" ") || g.querySelector("text")?.textContent || ""
-   ),
+   label: NL([...g.querySelectorAll("text tspan")].map(t=>t.textContent).join(" ") || g.querySelector("text")?.textContent || ""),
    fill:(r.getAttribute("fill")||"").toLowerCase(),
    pwd:!!g.querySelector("image")
   };
@@ -216,7 +244,6 @@ function trySeatsSequentially(list){
   }
 
   clickSeat(list[i++]);
-
   setTimeout(next, RD(800,3000));
  }
 
